@@ -67,6 +67,11 @@
         <div id="queueList" class="queue-list" role="list"></div>
         <button type="button" id="moreQueue" class="btn alt hidden">Diğer bildirimleri göster</button>
       </div>
+      <div class="queue-panel">
+        <div class="queue-top"><strong id="transferredCount">Aktarılan zaman kayıtları</strong><button type="button" class="btn alt" id="refreshTransferred">Listeyi yenile</button></div>
+        <p id="transferredStatus" class="queue-state" role="status" aria-live="polite">Aktarılmış kayıtlar henüz yüklenmedi.</p>
+        <div class="queue-list" id="transferredList" role="list"></div>
+      </div>
       <details class="manual-lookup"><summary>Gerekirse Notion bağlantısıyla bildirimi aç</summary>
         <form id="lookupForm" class="row"><label>Notion bildirim bağlantısı veya UUID<input id="source" placeholder="https://www.notion.so/..." /></label><button class="btn" type="submit">Kontrol et</button></form>
       </details>
@@ -265,6 +270,39 @@ async function queueRequest(cursor='',retry=true){
  if(!res.ok)throw Error(ERROR_TEXT[data.code]||data.code||'Bildirimler alınamadı.');
  return data;
 }
+
+async function loadTransferred(retry=true){
+ if(!access)return;
+ $('refreshTransferred').disabled=true;
+ $('transferredStatus').textContent='Gerçek ajansın aktarılmış kayıtları alınıyor...';
+ try{
+  const r=await fetch(BRIDGE+'/transferred',{headers:{authorization:'Bearer '+access},cache:'no-store'});
+  if(r.status===401&&retry&&refresh){
+   const t=await auth('/token?grant_type=refresh_token',{refresh_token:refresh});
+   access=t.access_token;refresh=t.refresh_token;return loadTransferred(false);
+  }
+  const data=await r.json().catch(()=>({code:'UNEXPECTED_RESPONSE'}));
+  if(!r.ok||data.code!=='TRANSFERRED_READ_OK'||!Array.isArray(data.items))throw Error(ERROR_TEXT[data.code]||data.code||'Aktarılan kayıt listesi alınamadı.');
+  $('transferredList').replaceChildren();
+  $('transferredCount').textContent='Aktarılan zaman kayıtları: '+data.items.length;
+  $('transferredStatus').textContent=data.items.length?'Nihai onay için bir kaydı açabilirsiniz.':'Henüz aktarılmış zaman kaydı bulunmuyor.';
+  for(const item of data.items){
+   const button=document.createElement('button');button.type='button';
+   button.className='queue-item';button.setAttribute('role','listitem');
+   const info=document.createElement('div'),title=document.createElement('strong'),meta=document.createElement('span'),pill=document.createElement('span');
+   title.textContent='Zaman kaydı · '+String(item.source_id||'').slice(0,8);
+   const date=item.linked_at?new Date(item.linked_at):null;
+   meta.textContent=date&&!Number.isNaN(date.valueOf())?'Aktarım: '+date.toLocaleDateString('tr-TR'):'Aktarılan gerçek bildirim';
+   pill.className='queue-pill';pill.textContent='Aktarıldı';
+   info.append(title,meta);button.append(info,pill);
+   button.addEventListener('click',()=>{$('source').value=item.source_url;check();});
+   $('transferredList').append(button);
+  }
+ }catch(e){$('transferredStatus').textContent='Aktarılmış kayıt listesi: '+e.message;}
+ finally{$('refreshTransferred').disabled=false;}
+}
+$('refreshTransferred').addEventListener('click',()=>loadTransferred());
+
 function appendQueueItem(item){
  const button=document.createElement('button');
  button.type='button';button.className='queue-item';button.setAttribute('role','listitem');
@@ -414,11 +452,11 @@ async function check(){
 }
 $('loginForm').addEventListener('submit',async e=>{
  e.preventDefault();$('signIn').disabled=true;msg('Giriş doğrulanıyor...');
- try{const data=await auth('/token?grant_type=password',{email:$('email').value.trim(),password:$('password').value});access=data.access_token;refresh=data.refresh_token;$('password').value='';show('userEmail',$('email').value.trim());$('login').classList.add('hidden');$('workspace').classList.remove('hidden');msg('Giriş doğrulandı. Bekleyen bildirimler kontrol ediliyor.');queueEpoch++;void connectionCheck();void loadQueue(true);}
+ try{const data=await auth('/token?grant_type=password',{email:$('email').value.trim(),password:$('password').value});access=data.access_token;refresh=data.refresh_token;$('password').value='';show('userEmail',$('email').value.trim());$('login').classList.add('hidden');$('workspace').classList.remove('hidden');msg('Giriş doğrulandı. Bekleyen bildirimler kontrol ediliyor.');queueEpoch++;void connectionCheck();void loadQueue(true);void loadTransferred();}
  catch(e){$('password').value='';msg('Giriş başarısız: '+e.message);}
  finally{$('signIn').disabled=false;}
 });
-$('logout').addEventListener('click',()=>{queueEpoch++;queueLoading=false;queueCursor=null;queueLoaded=0;$('queueList').replaceChildren();$('queueState').textContent='Liste henüz yüklenmedi.';$('connectionState').textContent='Oturum kapatıldı.';$('moreQueue').classList.add('hidden');const old=access;access='';refresh='';record=null;source='';finalPreview=null;$('finalPanel').classList.add('hidden');$('workspace').classList.add('hidden');$('login').classList.remove('hidden');$('result').classList.add('hidden');buttons();msg('Oturum kapatıldı.');if(old)auth('/logout',{},old).catch(()=>{});});
+$('logout').addEventListener('click',()=>{queueEpoch++;queueLoading=false;queueCursor=null;queueLoaded=0;$('queueList').replaceChildren();$('queueState').textContent='Liste henüz yüklenmedi.';$('connectionState').textContent='Oturum kapatıldı.';$('moreQueue').classList.add('hidden');$('transferredList').replaceChildren();$('transferredCount').textContent='Aktarılan zaman kayıtları';$('transferredStatus').textContent='Oturum kapatıldı.';const old=access;access='';refresh='';record=null;source='';finalPreview=null;$('finalPanel').classList.add('hidden');$('workspace').classList.add('hidden');$('login').classList.remove('hidden');$('result').classList.add('hidden');buttons();msg('Oturum kapatıldı.');if(old)auth('/logout',{},old).catch(()=>{});});
 $('lookupForm').addEventListener('submit',e=>{e.preventDefault();check();});
 async function decide(action){
  if(busy||!record)return;const reason=$('reason').value.trim();if(!reason){msg('Karar gerekçesi yazın.');return;}
@@ -431,7 +469,7 @@ for(const a of ['approve','reject','revoke'])$(a).addEventListener('click',()=>d
 async function transfer(action){
  if(!confirm(action==='transfer'?'Gerçek Zaman Kayıtları kaydı oluşturulmasını istiyor musunuz?':'Mutabakat kontrol edilsin mi?'))return;
  busy=true;buttons();msg('İşlem denetleniyor...');
- try{const data=await call('POST',action,{});msg('Sonuç: '+(data.code||'Tamamlandı'));await check();}
+ try{const data=await call('POST',action,{});msg('Sonuç: '+(data.code||'Tamamlandı'));await check();await loadTransferred();}
  catch(e){msg('İşlem engellendi: '+e.message);}
  finally{busy=false;buttons();}
 }
