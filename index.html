@@ -179,8 +179,8 @@ async function connectionCheck(retry=true){
   const queueStatus=queue?.accessible===true?'okuma başarılı':
     (queue?.http_status?'HTTP '+queue.http_status+' '+(queue.notion_error_code||''):
       queue?.notion_error_code||'okuma doğrulanamadı');
-  const labor=fin?.cost_contribution_guard;
-  const quota=fin?.quota_hours_guard;
+  const labor=fin?.cost_contribution_guard??fields.target_reader?.cost_contribution_guard;
+  const quota=fin?.quota_hours_guard??fields.target_reader?.quota_hours_guard;
   const translate=v=>v==='SOURCE_ZERO_GUARD_PRESENT'?'koruma bulundu':v==='SOURCE_ZERO_GUARD_MISSING'?'koruma eksik':'doğrulanamadı';
   const connection=data.connection||{};
   const identity=connection.connection_name?'Notion bağlantısı: '+connection.connection_name+
@@ -188,6 +188,7 @@ async function connectionCheck(retry=true){
     connection.error_code?'Notion token kimliği: '+connection.error_code+' · ':
     'Notion bağlantısının adı doğrulanamadı · ';
   $('connectionState').textContent=identity+'Bildirim kaynağı: '+detail(fields.source_reader)+
+     ' · Zaman Kayıtları kaynak erişimi: '+detail(fields.target_reader)+
      ' · Bildirim listesini okuma: '+queueStatus+
      ' · Zaman kaydı tokenı: '+detail(fin)+
      ' · Bildirim güncelleme tokenı: '+detail(fields.source_writer_token)+
