@@ -232,6 +232,9 @@ async function finalCheck(){
  }catch(e){
   if(requestedSource!==source||!access)return;
   finalPreview=null;
+  for(const key of ['finalHours','finalCost','finalRate','finalCurrency','finalApprovalStatus'])show(key,null);
+  $('finalTargetLink').classList.add('hidden');
+  $('finalApprove').disabled=true;$('finalReconcile').classList.add('hidden');
   $('finalStatus').textContent='Nihai onay durumu alınamadı: '+e.message;
   $('finalGuidance').textContent='Gerçek kaydı değiştirmeden önce bağlantı ve yetki koşulları doğrulanmalı.';
  }finally{$('refreshFinal').disabled=false;}
@@ -273,6 +276,7 @@ async function queueRequest(cursor='',retry=true){
 
 async function loadTransferred(retry=true){
  if(!access)return;
+ const sessionEpoch=queueEpoch;
  $('refreshTransferred').disabled=true;
  $('transferredStatus').textContent='Gerçek ajansın aktarılmış kayıtları alınıyor...';
  try{
@@ -283,6 +287,7 @@ async function loadTransferred(retry=true){
   }
   const data=await r.json().catch(()=>({code:'UNEXPECTED_RESPONSE'}));
   if(!r.ok||data.code!=='TRANSFERRED_READ_OK'||!Array.isArray(data.items))throw Error(ERROR_TEXT[data.code]||data.code||'Aktarılan kayıt listesi alınamadı.');
+  if(sessionEpoch!==queueEpoch||!access)return;
   $('transferredList').replaceChildren();
   $('transferredCount').textContent='Aktarılan zaman kayıtları: '+data.items.length;
   $('transferredStatus').textContent=data.items.length?'Nihai onay için bir kaydı açabilirsiniz.':'Henüz aktarılmış zaman kaydı bulunmuyor.';
