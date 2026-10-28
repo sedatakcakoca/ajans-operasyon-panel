@@ -179,8 +179,21 @@ async function connectionCheck(retry=true){
   const queueStatus=queue?.accessible===true?'okuma başarılı':
     (queue?.http_status?'HTTP '+queue.http_status+' '+(queue.notion_error_code||''):
       queue?.notion_error_code||'okuma doğrulanamadı');
-  const labor=fields.target_reader?.cost_contribution_guard??fin?.cost_contribution_guard??fields.target_final_update_token?.cost_contribution_guard;
-  const quota=fields.target_reader?.quota_hours_guard??fin?.quota_hours_guard??fields.target_final_update_token?.quota_hours_guard;
+  const laborChecks=[
+    ['Nihai onay bağlantısı',fields.target_final_update_token?.cost_contribution_guard],
+    ['Zaman kaydı bağlantısı',fin?.cost_contribution_guard],
+    ['Okuma bağlantısı',fields.target_reader?.cost_contribution_guard]
+  ];
+  const quotaChecks=[
+    ['Okuma bağlantısı',fields.target_reader?.quota_hours_guard],
+    ['Zaman kaydı bağlantısı',fin?.quota_hours_guard],
+    ['Nihai onay bağlantısı',fields.target_final_update_token?.quota_hours_guard]
+  ];
+  const laborSuccess=laborChecks.find(x=>x[1]==='LABOR_APPROVAL_GUARD_PRESENT');
+  const laborKnown=laborChecks.find(x=>x[1]&&x[1]!=='FORMULA_PROPERTY_NOT_VISIBLE'&&x[1]!=='FORMULA_EXPRESSION_NOT_VISIBLE');
+  const labor=(laborSuccess||laborKnown||laborChecks.find(x=>x[1])||[])[1];
+  const laborSource=(laborSuccess||laborKnown||laborChecks.find(x=>x[1])||[])[0];
+  const quota=(quotaChecks.find(x=>x[1]==='QUOTA_APPROVAL_GUARD_PRESENT')||quotaChecks.find(x=>x[1])||[])[1];
   const translate=v=>v==='LABOR_APPROVAL_GUARD_PRESENT'?'yalnız yetkili onay bilgileriyle maliyet hesaplanıyor':v==='LABOR_APPROVAL_GUARD_UNCONFIRMED'?'nihai işçilik onayı formülü doğrulanamadı':v==='QUOTA_APPROVAL_GUARD_PRESENT'?'yalnız nihai onaylı saatler sayılıyor':v==='QUOTA_APPROVAL_GUARD_UNCONFIRMED'?'onaylı saat formülü beklenen ifadeyle eşleşmedi':v==='FORMULA_PROPERTY_NOT_VISIBLE'?'formül alanı bu bağlantıya görünmüyor':v==='FORMULA_EXPRESSION_NOT_VISIBLE'?'formül ifadesi okunamıyor':v==='FORMULA_PROPERTY_TYPE_UNEXPECTED'?'beklenen formül alanı bulunamadı':'doğrulanamadı';
   const connection=data.connection||{};
   const identity=connection.connection_name?'Notion bağlantısı: '+connection.connection_name+
@@ -193,7 +206,7 @@ async function connectionCheck(retry=true){
      ' · Zaman kaydı tokenı: '+detail(fin)+
      ' · Bildirim güncelleme tokenı: '+detail(fields.source_writer_token)+
      ' · Nihai onay tokenı: '+detail(fields.target_final_update_token)+
-     ' · İlk aktarımda işçilik: '+translate(labor)+
+     ' · İlk aktarımda işçilik: '+translate(labor)+(laborSource?' ('+laborSource+')':'')+
      ' · İlk aktarımda kota: '+translate(quota)+
      '. Bu, gerçek Notion yazma işlemi değildir.';
  } catch(err){
