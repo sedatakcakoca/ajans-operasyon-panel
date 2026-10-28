@@ -210,6 +210,26 @@ async function connectionCheck(retry=true){
      ' · Genel okuma bağlantısının işçilik erişimi: '+translate(fields.target_reader?.cost_contribution_guard)+
      ' · İlk aktarımda kota: '+translate(quota)+
      '. Bu, gerçek Notion yazma işlemi değildir.';
+  document.getElementById('laborFormulaDiagnostic')?.remove();
+  const mismatch=fields.target_final_update_token?.cost_contribution_diagnostic;
+  if(mismatch?.observed_expression && labor!=='LABOR_APPROVAL_GUARD_PRESENT'){
+    const box=document.createElement('details');
+    box.id='laborFormulaDiagnostic';
+    box.style.marginTop='12px';
+    const summary=document.createElement('summary');
+    summary.textContent='İşçilik formülü uyuşmazlığı — Notion kaydını göster';
+    const title=document.createElement('p');
+    title.textContent='Notion tarafından saklanan gerçek formül (yalnız yönetici erişimi):';
+    const code=document.createElement('pre');
+    code.style.cssText='overflow:auto;max-height:260px;white-space:pre-wrap;word-break:break-word;font-size:12px;';
+    code.textContent=mismatch.observed_expression;
+    const copy=document.createElement('button');
+    copy.type='button';copy.className='btn alt';
+    copy.textContent='Formülü kopyala';
+    copy.addEventListener('click',()=>navigator.clipboard.writeText(mismatch.observed_expression));
+    box.append(summary,title,code,copy);
+    $('connectionPanel').appendChild(box);
+  }
  } catch(err){
   $('connectionState').textContent='Bağlantı kontrolü tamamlanamadı: '+err.message;
  } finally{$('checkConnection').disabled=false;}
