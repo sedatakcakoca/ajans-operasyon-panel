@@ -40,7 +40,7 @@
 <div class="shell">
   <header class="top">
     <div class="brand"><span class="brandmark">◫</span><span>Ajans Operasyon Merkezi<small>Yönetici işlemleri</small></span></div>
-    <span class="badge">Pilot · Gerçek yazım kapalı</span>
+    <span class="badge">Gerçek operasyon · Yazım henüz kapalı</span>
   </header>
   <main>
     <div class="intro"><div class="eyebrow">ZAMAN BİLDİRİMLERİ</div><h1>İncele, onayla ve aktar.</h1><p>Notion'daki bildirimleri güvenli yönetici girişiyle kontrol edin. Bu ekran mevcut Supabase servislerini kullanır; kullanıcı yetkisi olmadan kayıtları açmaz.</p></div>
@@ -56,6 +56,11 @@
     <section id="workspace" class="panel hidden">
       <div class="session"><div><h2>Gelen zaman bildirimleri</h2><small id="userEmail"></small></div><button class="btn alt" id="logout">Çıkış yap</button></div>
       <p>Yetkili olduğunuz ajansın bekleyen bildirimleri burada otomatik görüntülenir. Bir bildirime tıklayarak inceleyebilirsiniz.</p>
+      <div class="queue-panel" id="connectionPanel">
+        <div class="queue-top"><strong>Notion bağlantı denetimi</strong><button type="button" id="checkConnection" class="btn alt">Yeniden kontrol et</button></div>
+        <p id="connectionState" class="queue-state" role="status" aria-live="polite">Yönetici girişi sonrası sunucudaki Notion erişimi kontrol edilir. Gizli anahtarlar gösterilmez.</p>
+        <p class="muted">Kaynakları okuyabilmek, gerçek kayıt yazma yetkisi olduğunu kanıtlamaz.</p>
+      </div>
       <div class="queue-panel">
         <div class="queue-top"><strong id="queueCount">Bekleyen bildirimler</strong><button type="button" id="refreshQueue" class="btn alt">Listeyi yenile</button></div>
         <p id="queueState" class="queue-state" role="status" aria-live="polite">Liste henüz yüklenmedi.</p>
@@ -142,6 +147,37 @@ function appendQueueItem(item){
  button.addEventListener('click',()=>{$('source').value=item.url;check();});
  $('queueList').append(button);
 }
+async function connectionCheck(retry=true){
+ if(!access)return;
+ $('checkConnection').disabled=true;
+ $('connectionState').textContent='Notion kaynak bağlantıları denetleniyor...';
+ try {
+  const res=await fetch(BRIDGE+'/connection-check',{headers:{authorization:'Bearer '+access},cache:'no-store'});
+  if(res.status===401&&retry&&refresh){
+    const a=await auth('/token?grant_type=refresh_token',{refresh_token:refresh});
+    access=a.access_token;refresh=a.refresh_token;
+    return connectionCheck(false);
+  }
+  const data=await res.json().catch(()=>({code:'UNEXPECTED_RESPONSE'}));
+  if(!res.ok)throw Error(ERROR_TEXT[data.code]||data.code||'Bağlantı denetimi başarısız');
+  const detail=x=>x?.resource_accessible===true?'kaynak erişilebilir':x?.token_configured===true?'token tanımlı; erişim doğrulanamadı':'token eksik';
+  const fields=data.checks||{};
+  const fin=fields.target_writer_token;
+  const labor=fin?.cost_contribution_guard;
+  const quota=fin?.quota_hours_guard;
+  const translate=v=>v==='SOURCE_ZERO_GUARD_PRESENT'?'koruma bulundu':v==='SOURCE_ZERO_GUARD_MISSING'?'koruma eksik':'doğrulanamadı';
+  $('connectionState').textContent='Bildirim okuma: '+detail(fields.source_reader)+
+     ' · Zaman kaydı tokenı: '+detail(fin)+
+     ' · Bildirim güncelleme tokenı: '+detail(fields.source_writer_token)+
+     ' · İlk aktarımda işçilik: '+translate(labor)+
+     ' · İlk aktarımda kota: '+translate(quota)+
+     '. Bu, gerçek Notion yazma işlemi değildir.';
+ } catch(err){
+  $('connectionState').textContent='Bağlantı kontrolü tamamlanamadı: '+err.message;
+ } finally{$('checkConnection').disabled=false;}
+}
+$('checkConnection').addEventListener('click',()=>connectionCheck());
+
 async function loadQueue(reset=true){
  if(queueLoading||!access)return;
  queueLoading=true;const epoch=queueEpoch;
@@ -190,11 +226,11 @@ async function check(){
 }
 $('loginForm').addEventListener('submit',async e=>{
  e.preventDefault();$('signIn').disabled=true;msg('Giriş doğrulanıyor...');
- try{const data=await auth('/token?grant_type=password',{email:$('email').value.trim(),password:$('password').value});access=data.access_token;refresh=data.refresh_token;$('password').value='';show('userEmail',$('email').value.trim());$('login').classList.add('hidden');$('workspace').classList.remove('hidden');msg('Giriş doğrulandı. Bekleyen bildirimler kontrol ediliyor.');queueEpoch++;loadQueue(true);}
+ try{const data=await auth('/token?grant_type=password',{email:$('email').value.trim(),password:$('password').value});access=data.access_token;refresh=data.refresh_token;$('password').value='';show('userEmail',$('email').value.trim());$('login').classList.add('hidden');$('workspace').classList.remove('hidden');msg('Giriş doğrulandı. Bekleyen bildirimler kontrol ediliyor.');queueEpoch++;void connectionCheck();void loadQueue(true);}
  catch(e){$('password').value='';msg('Giriş başarısız: '+e.message);}
  finally{$('signIn').disabled=false;}
 });
-$('logout').addEventListener('click',()=>{queueEpoch++;queueLoading=false;queueCursor=null;queueLoaded=0;$('queueList').replaceChildren();$('queueState').textContent='Liste henüz yüklenmedi.';$('moreQueue').classList.add('hidden');const old=access;access='';refresh='';record=null;source='';$('workspace').classList.add('hidden');$('login').classList.remove('hidden');$('result').classList.add('hidden');buttons();msg('Oturum kapatıldı.');if(old)auth('/logout',{},old).catch(()=>{});});
+$('logout').addEventListener('click',()=>{queueEpoch++;queueLoading=false;queueCursor=null;queueLoaded=0;$('queueList').replaceChildren();$('queueState').textContent='Liste henüz yüklenmedi.';$('connectionState').textContent='Oturum kapatıldı.';$('moreQueue').classList.add('hidden');const old=access;access='';refresh='';record=null;source='';$('workspace').classList.add('hidden');$('login').classList.remove('hidden');$('result').classList.add('hidden');buttons();msg('Oturum kapatıldı.');if(old)auth('/logout',{},old).catch(()=>{});});
 $('lookupForm').addEventListener('submit',e=>{e.preventDefault();check();});
 async function decide(action){
  if(busy||!record)return;const reason=$('reason').value.trim();if(!reason){msg('Karar gerekçesi yazın.');return;}
