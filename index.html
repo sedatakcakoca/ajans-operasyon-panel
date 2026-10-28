@@ -160,13 +160,30 @@ async function connectionCheck(retry=true){
   }
   const data=await res.json().catch(()=>({code:'UNEXPECTED_RESPONSE'}));
   if(!res.ok)throw Error(ERROR_TEXT[data.code]||data.code||'Bağlantı denetimi başarısız');
-  const detail=x=>x?.resource_accessible===true?'kaynak erişilebilir':x?.token_configured===true?'token tanımlı; erişim doğrulanamadı':'token eksik';
+  const detail=x=>{
+    if(x?.resource_accessible===true)return 'kaynak erişilebilir';
+    if(x?.token_configured!==true)return 'token eksik';
+    const cause=x?.http_status===401?'401: Notion tokenı geçersiz':x?.http_status===403?'403: bağlantı izni yok':
+      x?.http_status===404?'404: kaynak bağlantıyla paylaşılmamış veya kimlik yanlış':
+      x?.http_status===400?'400: Notion isteği kabul edilmedi':
+      x?.http_status===429?'429: Notion istek sınırı':
+      x?.notion_error_code==='NETWORK_OR_RESPONSE_ERROR'?'ağ/yanıt hatası':
+      x?.resource_shape_mismatch?'beklenmeyen kaynak yanıtı':
+      x?.http_status?'HTTP '+x.http_status+(x.notion_error_code?' ('+x.notion_error_code+')':''):
+      (x?.notion_error_code||'erişim doğrulanamadı');
+    return 'token tanımlı; '+cause;
+  };
   const fields=data.checks||{};
   const fin=fields.target_writer_token;
+  const queue=fields.source_query;
+  const queueStatus=queue?.accessible===true?'okuma başarılı':
+    (queue?.http_status?'HTTP '+queue.http_status+' '+(queue.notion_error_code||''):
+      queue?.notion_error_code||'okuma doğrulanamadı');
   const labor=fin?.cost_contribution_guard;
   const quota=fin?.quota_hours_guard;
   const translate=v=>v==='SOURCE_ZERO_GUARD_PRESENT'?'koruma bulundu':v==='SOURCE_ZERO_GUARD_MISSING'?'koruma eksik':'doğrulanamadı';
-  $('connectionState').textContent='Bildirim okuma: '+detail(fields.source_reader)+
+  $('connectionState').textContent='Bildirim kaynağı: '+detail(fields.source_reader)+
+     ' · Bildirim listesini okuma: '+queueStatus+
      ' · Zaman kaydı tokenı: '+detail(fin)+
      ' · Bildirim güncelleme tokenı: '+detail(fields.source_writer_token)+
      ' · İlk aktarımda işçilik: '+translate(labor)+
