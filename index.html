@@ -207,7 +207,7 @@ async function connectionCheck(retry=true){
      ' · Bildirim güncelleme tokenı: '+detail(fields.source_writer_token)+
      ' · Nihai onay tokenı: '+detail(fields.target_final_update_token)+
      ' · İşçilik formülü (erişebilen bağlantı): '+translate(labor)+(laborSource?' ('+laborSource+')':'')+
-     ' · Aktarım okuyucusu işçilik erişimi: '+translate(fields.target_reader?.cost_contribution_guard)+
+     ' · Genel okuma bağlantısının işçilik erişimi: '+translate(fields.target_reader?.cost_contribution_guard)+
      ' · İlk aktarımda kota: '+translate(quota)+
      '. Bu, gerçek Notion yazma işlemi değildir.';
  } catch(err){
