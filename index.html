@@ -179,9 +179,9 @@ async function connectionCheck(retry=true){
   const queueStatus=queue?.accessible===true?'okuma başarılı':
     (queue?.http_status?'HTTP '+queue.http_status+' '+(queue.notion_error_code||''):
       queue?.notion_error_code||'okuma doğrulanamadı');
-  const labor=fin?.cost_contribution_guard??fields.target_reader?.cost_contribution_guard;
-  const quota=fin?.quota_hours_guard??fields.target_reader?.quota_hours_guard;
-  const translate=v=>v==='LABOR_APPROVAL_GUARD_PRESENT'?'yalnız yetkili onay bilgileriyle maliyet hesaplanıyor':v==='LABOR_APPROVAL_GUARD_UNCONFIRMED'?'nihai işçilik onayı formülü doğrulanamadı':v==='QUOTA_APPROVAL_GUARD_PRESENT'?'yalnız nihai onaylı saatler sayılıyor':v==='QUOTA_APPROVAL_GUARD_UNCONFIRMED'?'onaylı saat formülü doğrulanamadı':'doğrulanamadı';
+  const labor=fields.target_reader?.cost_contribution_guard??fin?.cost_contribution_guard??fields.target_final_update_token?.cost_contribution_guard;
+  const quota=fields.target_reader?.quota_hours_guard??fin?.quota_hours_guard??fields.target_final_update_token?.quota_hours_guard;
+  const translate=v=>v==='LABOR_APPROVAL_GUARD_PRESENT'?'yalnız yetkili onay bilgileriyle maliyet hesaplanıyor':v==='LABOR_APPROVAL_GUARD_UNCONFIRMED'?'nihai işçilik onayı formülü doğrulanamadı':v==='QUOTA_APPROVAL_GUARD_PRESENT'?'yalnız nihai onaylı saatler sayılıyor':v==='QUOTA_APPROVAL_GUARD_UNCONFIRMED'?'onaylı saat formülü beklenen ifadeyle eşleşmedi':v==='FORMULA_PROPERTY_NOT_VISIBLE'?'formül alanı bu bağlantıya görünmüyor':v==='FORMULA_EXPRESSION_NOT_VISIBLE'?'formül ifadesi okunamıyor':v==='FORMULA_PROPERTY_TYPE_UNEXPECTED'?'beklenen formül alanı bulunamadı':'doğrulanamadı';
   const connection=data.connection||{};
   const identity=connection.connection_name?'Notion bağlantısı: '+connection.connection_name+
     (connection.workspace_name?' ('+connection.workspace_name+')':'')+' · ':
