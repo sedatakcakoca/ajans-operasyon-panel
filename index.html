@@ -84,6 +84,24 @@
         <p class="muted">Bu onay yalnızca bildirimin zaman kaydına aktarılması içindir. Zaman aktarımı yetkili yönetici kararı ve kaynak kontrolleriyle etkin; nihai işçilik/maliyet onayı ve banka-finans yazımı ayrı işlemlerdir.</p>
         <div class="actions"><button class="btn" id="transfer" disabled>Zaman kaydına aktar</button><button class="btn alt" id="reconcile" disabled>Mutabakatı kontrol et</button></div>
       </div>
+      <div class="queue-panel hidden" id="finalPanel">
+        <div class="queue-top"><strong>2. Nihai zaman ve işçilik onayı</strong><button type="button" class="btn alt" id="refreshFinal">Durumu yenile</button></div>
+        <p class="muted">Aktarım izni, nihai işçilik onayı değildir. Nihai karar yalnız yetkili yönetici oturumu ve sunucu mutabakatı ile verilir.</p>
+        <p id="finalStatus" class="queue-state" role="status" aria-live="polite">Aktarılmış kayıt inceleniyor...</p>
+        <dl>
+          <div><dt>Aktarılan saat</dt><dd id="finalHours">—</dd></div>
+          <div><dt>Hesaplanan işçilik</dt><dd id="finalCost">—</dd></div>
+          <div><dt>Sabit saatlik maliyet</dt><dd id="finalRate">—</dd></div>
+          <div><dt>Kur / para birimi</dt><dd id="finalCurrency">—</dd></div>
+          <div><dt>Nihai onay durumu</dt><dd id="finalApprovalStatus">—</dd></div>
+        </dl>
+        <p id="finalGuidance" class="muted"></p>
+        <p><a id="finalTargetLink" class="hidden" href="#" target="_blank" rel="noopener noreferrer">Zaman kaydını Notion'da aç</a></p>
+        <div class="actions">
+          <button type="button" class="btn" id="finalApprove" disabled>Nihai işçilik ve saat onayını ver</button>
+          <button type="button" class="btn alt hidden" id="finalReconcile" disabled>Nihai onay mutabakatını doğrula</button>
+        </div>
+      </div>
     </section>
     <div class="notice" role="status" aria-live="polite" id="notice"></div>
     <p class="footer">Bu sayfa yalnızca yönetici arayüzüdür. Hesaplar, veriler, kimlik ve yetki denetimi Supabase tarafındadır. Panelin açılması üretim kabulü veya yazma izni değildir.</p>
@@ -98,6 +116,8 @@ const msg=s=>{ $('notice').textContent=s; };
 const show=(id,v)=>{ $(id).textContent=v===null||v===undefined||v===''?'—':String(v); };
 const ERROR_TEXT={INSTALLATION_MISSING_OR_AMBIGUOUS:'Gerçek ajans kurulumu henüz tanımlanmadı.',INSTALLATION_NOT_READY:'Ajans kurulumu henüz kabul edilmedi.',MANAGER_NOT_AUTHORIZED:'Bu hesabın yönetici yetkisi bulunmuyor.',INVALID_USER_JWT:'Oturum geçerli değil.',REAL_TIME_WRITES_DISABLED:'Gerçek zaman aktarımı henüz açılmadı.',APPROVAL_DECISIONS_DISABLED:'Güvenli onay yazma kapısı kapalı.',NOTION_QUEUE_READ_UNAVAILABLE:'Notion bildirim kuyruğuna sunucu erişemedi.',NOTION_READ_CONFIG_MISSING:'Notion okuma bağlantısı henüz tanımlı değil.',QUEUE_UNAVAILABLE:'Bildirim listesi şu anda alınamıyor.',APPROVAL_WRITE_GATE_CLOSED:'Bu bildirim için onay yetkisi henüz açılmadı.',PREFLIGHT_UNAVAILABLE:'Sunucu kontrolü şu anda tamamlanamadı.'};
 let config=null,access='',refresh='',record=null,source='',busy=false;
+const FINALIZE=BASE+'/functions/v1/agency-time-finalize';
+let finalPreview=null,finalBusy=false;
 let queueCursor=null,queueEpoch=0,queueLoading=false,queueLoaded=0;
 async function getConfig(){
  const res=await fetch(BRIDGE+'/config',{cache:'no-store'});
@@ -122,6 +142,116 @@ async function call(method,action='',body=null,retry=true){
  if(!res.ok)throw Error(ERROR_TEXT[data.code]||data.code||'Sunucu işlemi reddetti.');
  return data;
 }
+
+
+const FINAL_TEXT={
+ LINKED_TRANSFER_REQUIRED:'Bu bildirim henüz gerçek Zaman Kayıtları kaydına aktarılmamış.',
+ INSTALLATION_TIME_GATE_CLOSED:'Zaman aktarım kurulum kapısı kapalı.',
+ NOTION_FINAL_TOKEN_MISSING:'Nihai onay Notion bağlantısı eksik.',
+ ALREADY_FINALLY_APPROVED:'Nihai onay kaydedilmiş.',
+ FINAL_APPROVAL_RECONCILIATION_REQUIRED:'Önceki onay girişimi sonuçlanmamış; tekrar onay vermeden mutabakat kontrol edilmeli.',
+ FINAL_TARGET_PREVIEW_UNAVAILABLE:'Notion hedef kaydı şu anda okunamadı.',
+ FINAL_TARGET_READ_UNAVAILABLE:'Zaman kaydı bağlantılarına erişilemiyor.',
+ FINAL_TARGET_READ_CONFLICT:'Notion yanıtları arasında kayıt güncelleme uyuşmazlığı var.',
+ TIME_STATUS_NOT_PENDING:'Zaman kaydı bekleyen onay durumunda değil.',
+ NOT_REAL_OPERATION:'Kayıt gerçek operasyon kapsamında değil.',
+ INVALID_HOURS:'Çalışma saati geçersiz.',
+ COST_RATE_NOT_SET:'Sabit saatlik maliyet, para birimi veya kur henüz girilmemiş.',
+ COST_AND_RELATIONS_NOT_READY:'Maliyet veya proje/görev ilişkisi henüz mutabık değil.',
+ PENDING_HOURS_OR_LABOR_NOT_ZERO:'Onaysız maliyet ve kota 0 olarak doğrulanamadı.',
+ FINAL_APPROVAL_FIELDS_ALREADY_SET:'Nihai onay bilgileri daha önce doldurulmuş.',
+ LINKED_TARGET_REQUIRED:'Bu bildirime ait bağlı zaman kaydı bulunamadı.',
+ FINAL_APPROVAL_PRECONDITIONS_CHANGED:'Notion kaydı inceleme sonrasında değişmiş. Yeniden denetleyin.',
+ FINAL_APPROVAL_NOTION_WRITE_RECONCILE_REQUIRED:'Notion güncelleme sonucu belirsiz; aynı işlem için mutabakatı doğrulayın.',
+ FINAL_APPROVAL_NOTION_READBACK_UNCONFIRMED:'Notion güncellemesinin maliyet ve saat sonucu doğrulanamadı.',
+ COST_RATE_AND_RELATIONS_NOT_FINALIZED:'Sabit maliyet ve ilişkiler nihai onay için henüz hazır değil.',
+ SELF_APPROVAL_DENIED:'Çalışan kendi zaman kaydına nihai onay veremez.',
+ FINAL_TIME_LABOR_APPROVAL_CONFIRMED:'Nihai onay tamamlandı; işçilik ve saat Notion üzerinden doğrulandı.'
+};
+async function finalRequest(method='GET',payload=null,retry=true){
+ if(!access||!source)throw Error('Yönetici girişi ve bildirim kimliği gerekli.');
+ const response=await fetch(FINALIZE+'?source_id='+encodeURIComponent(source),{
+  method,
+  headers:{authorization:'Bearer '+access,...(payload?{'content-type':'application/json'}:{})},
+  body:payload?JSON.stringify(payload):undefined,
+  cache:'no-store'
+ });
+ if(response.status===401&&retry&&refresh){
+  const t=await auth('/token?grant_type=refresh_token',{refresh_token:refresh});
+  access=t.access_token;refresh=t.refresh_token;return finalRequest(method,payload,false);
+ }
+ const data=await response.json().catch(()=>({code:'UNEXPECTED_RESPONSE'}));
+ if(!response.ok)throw Error(FINAL_TEXT[data.code]||data.code||'Nihai onay sunucusu işlemi reddetti.');
+ return data;
+}
+function renderFinal(){
+ const p=finalPreview;
+ if(!p){$('finalPanel').classList.add('hidden');return;}
+ $('finalPanel').classList.remove('hidden');
+ const reason=p.reason;
+ const ready=p.final_approval_available===true&&p.final_state==='pending';
+ $('finalStatus').textContent=p.final_state==='confirmed'?'Nihai işçilik onayı tamamlanmış.':
+    p.final_state==='reconcile'?'Önceki onayın sonucu kesinleşmemiş. Yeni onay yerine mutabakat kontrolü yapın.':
+    ready?'Nihai onay ön koşulları uygun. Kesin karar sunucu tarafından yeniden doğrulanacak.':
+    (FINAL_TEXT[reason]||reason||'Nihai onay için henüz hazır değil.');
+ show('finalHours',typeof p.hours==='number'?p.hours+' saat':null);
+ show('finalCost',typeof p.calculated_cost_tl==='number'?p.calculated_cost_tl.toLocaleString('tr-TR',{maximumFractionDigits:2})+' TL':null);
+ show('finalRate',typeof p.rate==='number'?p.rate:null);
+ show('finalCurrency',typeof p.fx==='number'?(p.fx+' · '+(p.currency||'para birimi belirtilmedi')):null);
+ show('finalApprovalStatus',p.current_status||(p.final_state==='confirmed'?'Onaylandı':'Bekliyor'));
+ const issues=(p.blockers||[]).map(x=>FINAL_TEXT[x]||x);
+ $('finalGuidance').textContent=issues.length?issues.join(' • '):
+    p.final_state==='reconcile'?'Aynı denetim olayını doğrulayacağız; ikinci bir onay oluşturulmayacak.':
+    ready?'Nihai onay maliyeti ve dönem saatini etkiler. Kaydı kontrol ettikten sonra kararı verin.':
+    'Hedef kaydın eksik bilgilerini yalnız yetkili Notion kullanıcısı tamamlayabilir.';
+ const link=p.notion_target_url||p.target_url||'';
+ const safeLink=/^https:\/\/(?:www\.)?notion\.so\/[A-Za-z0-9/-]+(?:\?.*)?$/.test(link);
+ $('finalTargetLink').classList.toggle('hidden',!safeLink);
+ if(safeLink)$('finalTargetLink').href=link;
+ $('finalApprove').disabled=!ready||finalBusy||busy;
+ const recon=p.final_state==='reconcile'&&!!p.request_id;
+ $('finalReconcile').classList.toggle('hidden',!recon);
+ $('finalReconcile').disabled=!recon||finalBusy||busy;
+ $('refreshFinal').disabled=finalBusy;
+}
+async function finalCheck(){
+ if(!access||!source)return;
+ const requestedSource=source;
+ $('finalPanel').classList.remove('hidden');
+ $('finalStatus').textContent='Aktarılmış kaydın durumu denetleniyor...';
+ $('refreshFinal').disabled=true;$('finalApprove').disabled=true;$('finalReconcile').disabled=true;
+ try{
+  const data=await finalRequest('GET');
+  if(requestedSource!==source||!access)return;
+  finalPreview=data;renderFinal();
+ }catch(e){
+  if(requestedSource!==source||!access)return;
+  finalPreview=null;
+  $('finalStatus').textContent='Nihai onay durumu alınamadı: '+e.message;
+  $('finalGuidance').textContent='Gerçek kaydı değiştirmeden önce bağlantı ve yetki koşulları doğrulanmalı.';
+ }finally{$('refreshFinal').disabled=false;}
+}
+async function finalDecision(action){
+ const p=finalPreview;
+ if(finalBusy||!p||!source)return;
+ if(action==='approve'&&(!p.final_approval_available||!p.target_last_edited_at))return;
+ if(action==='reconcile'&&(!p.request_id||p.final_state!=='reconcile'))return;
+ if(!confirm(action==='approve'?
+  'Bu kayıt için NİHAİ işçilik ve saat onayını vermek istiyor musunuz? Maliyet ve hizmet kotası etkilenebilir.':
+  'Önceki nihai onay girişiminin sonucunu yeniden yazmadan doğrulamak istiyor musunuz?'))return;
+ finalBusy=true;renderFinal();msg('Nihai onay sunucusu kaydı ve kimliği doğruluyor...');
+ try{
+  const result=await finalRequest('POST',{
+   action,request_id:action==='reconcile'?p.request_id:crypto.randomUUID(),
+   expected_target_last_edited_at:p.target_last_edited_at
+  });
+  msg(FINAL_TEXT[result.code]||('Nihai onay sonucu: '+result.code));
+ }catch(e){msg('Nihai onay işlemi: '+e.message);}
+ finally{finalBusy=false;await finalCheck();renderFinal();}
+}
+$('refreshFinal').addEventListener('click',()=>finalCheck());
+$('finalApprove').addEventListener('click',()=>finalDecision('approve'));
+$('finalReconcile').addEventListener('click',()=>finalDecision('reconcile'));
 
 async function queueRequest(cursor='',retry=true){
  if(!access)throw Error('Önce giriş yapın.');
@@ -277,10 +407,10 @@ function buttons(){
 }
 async function check(){
  const id=idFromText($('source').value);if(!id){msg('Geçerli bildirim bağlantısı veya UUID yazın.');return;}
- source=id;record=null;busy=true;buttons();msg('Sunucu kaynakları ve yönetici yetkisini denetliyor...');
+ source=id;record=null;finalPreview=null;$('finalPanel').classList.add('hidden');busy=true;buttons();msg('Sunucu kaynakları ve yönetici yetkisini denetliyor...');
  try{record=await call('GET');$('result').classList.remove('hidden');show('sourceId',source);show('code',record.code);show('approval',record.approval?.state||'Onay bulunamadı');show('blockers',(record.blockers||[]).map(x=>ERROR_TEXT[x]||x).join(' • ')||'Engel bildirilmedi');msg('Kontrol tamamlandı. Son kararı sunucu verir.');}
  catch(e){$('result').classList.add('hidden');msg('Kontrol sonucu: '+e.message);}
- finally{busy=false;buttons();}
+ finally{busy=false;buttons();await finalCheck();}
 }
 $('loginForm').addEventListener('submit',async e=>{
  e.preventDefault();$('signIn').disabled=true;msg('Giriş doğrulanıyor...');
@@ -288,7 +418,7 @@ $('loginForm').addEventListener('submit',async e=>{
  catch(e){$('password').value='';msg('Giriş başarısız: '+e.message);}
  finally{$('signIn').disabled=false;}
 });
-$('logout').addEventListener('click',()=>{queueEpoch++;queueLoading=false;queueCursor=null;queueLoaded=0;$('queueList').replaceChildren();$('queueState').textContent='Liste henüz yüklenmedi.';$('connectionState').textContent='Oturum kapatıldı.';$('moreQueue').classList.add('hidden');const old=access;access='';refresh='';record=null;source='';$('workspace').classList.add('hidden');$('login').classList.remove('hidden');$('result').classList.add('hidden');buttons();msg('Oturum kapatıldı.');if(old)auth('/logout',{},old).catch(()=>{});});
+$('logout').addEventListener('click',()=>{queueEpoch++;queueLoading=false;queueCursor=null;queueLoaded=0;$('queueList').replaceChildren();$('queueState').textContent='Liste henüz yüklenmedi.';$('connectionState').textContent='Oturum kapatıldı.';$('moreQueue').classList.add('hidden');const old=access;access='';refresh='';record=null;source='';finalPreview=null;$('finalPanel').classList.add('hidden');$('workspace').classList.add('hidden');$('login').classList.remove('hidden');$('result').classList.add('hidden');buttons();msg('Oturum kapatıldı.');if(old)auth('/logout',{},old).catch(()=>{});});
 $('lookupForm').addEventListener('submit',e=>{e.preventDefault();check();});
 async function decide(action){
  if(busy||!record)return;const reason=$('reason').value.trim();if(!reason){msg('Karar gerekçesi yazın.');return;}
