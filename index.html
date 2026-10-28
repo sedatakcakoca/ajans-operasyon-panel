@@ -192,6 +192,7 @@ async function connectionCheck(retry=true){
      ' · Bildirim listesini okuma: '+queueStatus+
      ' · Zaman kaydı tokenı: '+detail(fin)+
      ' · Bildirim güncelleme tokenı: '+detail(fields.source_writer_token)+
+     ' · Nihai onay tokenı: '+detail(fields.target_final_update_token)+
      ' · İlk aktarımda işçilik: '+translate(labor)+
      ' · İlk aktarımda kota: '+translate(quota)+
      '. Bu, gerçek Notion yazma işlemi değildir.';
