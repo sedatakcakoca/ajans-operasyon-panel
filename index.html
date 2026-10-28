@@ -181,7 +181,7 @@ async function connectionCheck(retry=true){
       queue?.notion_error_code||'okuma doğrulanamadı');
   const labor=fin?.cost_contribution_guard??fields.target_reader?.cost_contribution_guard;
   const quota=fin?.quota_hours_guard??fields.target_reader?.quota_hours_guard;
-  const translate=v=>v==='QUOTA_APPROVAL_GUARD_PRESENT'?'yalnız nihai onaylı saatler sayılıyor':v==='QUOTA_APPROVAL_GUARD_UNCONFIRMED'?'onaylı saat formülü doğrulanamadı':v==='SOURCE_ZERO_GUARD_PRESENT'?'kaynak koruması bulundu':v==='SOURCE_ZERO_GUARD_MISSING'?'kaynak koruması eksik':'doğrulanamadı';
+  const translate=v=>v==='LABOR_APPROVAL_GUARD_PRESENT'?'yalnız yetkili onay bilgileriyle maliyet hesaplanıyor':v==='LABOR_APPROVAL_GUARD_UNCONFIRMED'?'nihai işçilik onayı formülü doğrulanamadı':v==='QUOTA_APPROVAL_GUARD_PRESENT'?'yalnız nihai onaylı saatler sayılıyor':v==='QUOTA_APPROVAL_GUARD_UNCONFIRMED'?'onaylı saat formülü doğrulanamadı':'doğrulanamadı';
   const connection=data.connection||{};
   const identity=connection.connection_name?'Notion bağlantısı: '+connection.connection_name+
     (connection.workspace_name?' ('+connection.workspace_name+')':'')+' · ':
