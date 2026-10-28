@@ -20,6 +20,17 @@
     .actions{display:flex;gap:8px;flex-wrap:wrap}.row{display:flex;gap:14px;align-items:flex-end}.row label{flex:1;min-width:0}.row .btn{margin-bottom:16px}
     .session{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.session small{color:#687892;font-size:12px}.muted{color:#76849a;font-size:12px!important;line-height:1.7}
     .hidden{display:none!important}.result{border-top:1px solid #e0e7f1;margin-top:24px;padding-top:10px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}dl>div{background:#f5f7fb;padding:14px;border-radius:10px}dt{color:#76859a;font-size:11px;text-transform:uppercase;letter-spacing:.05em}dd{font-size:13px;font-weight:670;word-break:break-word;margin:7px 0 0}
+    .queue-panel{border:1px solid #e1e7f0;border-radius:12px;padding:18px;background:#fafcff;margin:16px 0 20px}
+    .queue-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+    .queue-state{font-size:13px;color:#536985;line-height:1.6;margin:12px 0}
+    .queue-list{display:grid;gap:9px;margin-top:14px}
+    .queue-item{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;width:100%;text-align:left;border:1px solid #dbe4ef;background:#fff;border-radius:10px;padding:14px 15px;color:#21324b}
+    .queue-item:hover,.queue-item:focus-visible{border-color:#7899c6;background:#f6f9ff}
+    .queue-item strong{display:block;font-size:14px;margin-bottom:5px;word-break:break-word}
+    .queue-item span{display:block;font-size:12px;color:#62758e;line-height:1.4}
+    .queue-pill{padding:5px 8px;border-radius:8px;background:#eef3fb;color:#34557d;font-size:12px;white-space:nowrap}
+    .manual-lookup{margin:20px 0;padding:10px 0;border-top:1px solid #e3eaf3}
+    .manual-lookup summary{cursor:pointer;font-size:13px;color:#315682;font-weight:650}
     .notice{font-size:14px;color:#2a4b79;padding:16px 0;min-height:54px;font-weight:550;white-space:pre-wrap}.footer{color:#77859a;font-size:12px;line-height:1.65;margin:18px 0 50px}
     hr{border:0;border-top:1px solid #e2e8f0;margin:24px 0}a{color:#295a9b}button:focus-visible{outline:3px solid #82b0ed;outline-offset:3px}
     @media(max-width:620px){.shell{padding:0 16px}.top{height:68px}.brand{font-size:13px}.badge{font-size:10px;padding:8px}.intro{margin-top:39px}.panel{padding:20px}.row,.session{display:block}.row .btn{margin-bottom:3px}dl{grid-template-columns:1fr}}
@@ -43,9 +54,17 @@
       </form>
     </section>
     <section id="workspace" class="panel hidden">
-      <div class="session"><div><h2>Zaman bildirimini seç</h2><small id="userEmail"></small></div><button class="btn alt" id="logout">Çıkış yap</button></div>
-      <p>Mevcut <a href="https://app.notion.com/p/fe3b4762eb5d46a39b44d72907c7b4ce" target="_blank" rel="noreferrer noopener">Notion Zaman Bildirimleri kuyruğu</a> içindeki bir bildirimin bağlantısını kopyalayın.</p>
-      <form id="lookupForm" class="row"><label>Notion bildirim bağlantısı veya UUID<input id="source" required placeholder="https://www.notion.so/..." /></label><button class="btn" type="submit">Kontrol et</button></form>
+      <div class="session"><div><h2>Gelen zaman bildirimleri</h2><small id="userEmail"></small></div><button class="btn alt" id="logout">Çıkış yap</button></div>
+      <p>Yetkili olduğunuz ajansın bekleyen bildirimleri burada otomatik görüntülenir. Bir bildirime tıklayarak inceleyebilirsiniz.</p>
+      <div class="queue-panel">
+        <div class="queue-top"><strong id="queueCount">Bekleyen bildirimler</strong><button type="button" id="refreshQueue" class="btn alt">Listeyi yenile</button></div>
+        <p id="queueState" class="queue-state" role="status" aria-live="polite">Liste henüz yüklenmedi.</p>
+        <div id="queueList" class="queue-list" role="list"></div>
+        <button type="button" id="moreQueue" class="btn alt hidden">Diğer bildirimleri göster</button>
+      </div>
+      <details class="manual-lookup"><summary>Gerekirse Notion bağlantısıyla bildirimi aç</summary>
+        <form id="lookupForm" class="row"><label>Notion bildirim bağlantısı veya UUID<input id="source" placeholder="https://www.notion.so/..." /></label><button class="btn" type="submit">Kontrol et</button></form>
+      </details>
       <div id="result" class="result hidden">
         <h3>Sunucu kontrolü</h3>
         <dl>
@@ -72,8 +91,9 @@ const BRIDGE=BASE+'/functions/v1/agency-time-manager';
 const $=x=>document.getElementById(x);
 const msg=s=>{ $('notice').textContent=s; };
 const show=(id,v)=>{ $(id).textContent=v===null||v===undefined||v===''?'—':String(v); };
-const ERROR_TEXT={INSTALLATION_MISSING_OR_AMBIGUOUS:'Gerçek ajans kurulumu henüz tanımlanmadı.',INSTALLATION_NOT_READY:'Ajans kurulumu henüz kabul edilmedi.',MANAGER_NOT_AUTHORIZED:'Bu hesabın yönetici yetkisi bulunmuyor.',INVALID_USER_JWT:'Oturum geçerli değil.',REAL_TIME_WRITES_DISABLED:'Gerçek zaman aktarımı henüz açılmadı.',APPROVAL_DECISIONS_DISABLED:'Güvenli onay yazma kapısı kapalı.',APPROVAL_WRITE_GATE_CLOSED:'Bu bildirim için onay yetkisi henüz açılmadı.',PREFLIGHT_UNAVAILABLE:'Sunucu kontrolü şu anda tamamlanamadı.'};
+const ERROR_TEXT={INSTALLATION_MISSING_OR_AMBIGUOUS:'Gerçek ajans kurulumu henüz tanımlanmadı.',INSTALLATION_NOT_READY:'Ajans kurulumu henüz kabul edilmedi.',MANAGER_NOT_AUTHORIZED:'Bu hesabın yönetici yetkisi bulunmuyor.',INVALID_USER_JWT:'Oturum geçerli değil.',REAL_TIME_WRITES_DISABLED:'Gerçek zaman aktarımı henüz açılmadı.',APPROVAL_DECISIONS_DISABLED:'Güvenli onay yazma kapısı kapalı.',NOTION_QUEUE_READ_UNAVAILABLE:'Notion bildirim kuyruğuna sunucu erişemedi.',NOTION_READ_CONFIG_MISSING:'Notion okuma bağlantısı henüz tanımlı değil.',QUEUE_UNAVAILABLE:'Bildirim listesi şu anda alınamıyor.',APPROVAL_WRITE_GATE_CLOSED:'Bu bildirim için onay yetkisi henüz açılmadı.',PREFLIGHT_UNAVAILABLE:'Sunucu kontrolü şu anda tamamlanamadı.'};
 let config=null,access='',refresh='',record=null,source='',busy=false;
+let queueCursor=null,queueEpoch=0,queueLoading=false,queueLoaded=0;
 async function getConfig(){
  const res=await fetch(BRIDGE+'/config',{cache:'no-store'});
  if(!res.ok)throw Error('Panel ayarları alınamadı.');
@@ -97,6 +117,57 @@ async function call(method,action='',body=null,retry=true){
  if(!res.ok)throw Error(ERROR_TEXT[data.code]||data.code||'Sunucu işlemi reddetti.');
  return data;
 }
+
+async function queueRequest(cursor='',retry=true){
+ if(!access)throw Error('Önce giriş yapın.');
+ const url=BRIDGE+'/queue'+(cursor?'?cursor='+encodeURIComponent(cursor):'');
+ const res=await fetch(url,{headers:{authorization:'Bearer '+access},cache:'no-store'});
+ if(res.status===401&&retry&&refresh){
+   const t=await auth('/token?grant_type=refresh_token',{refresh_token:refresh});
+   access=t.access_token;refresh=t.refresh_token;return queueRequest(cursor,false);
+ }
+ const data=await res.json().catch(()=>({code:'UNEXPECTED_RESPONSE'}));
+ if(!res.ok)throw Error(ERROR_TEXT[data.code]||data.code||'Bildirimler alınamadı.');
+ return data;
+}
+function appendQueueItem(item){
+ const button=document.createElement('button');
+ button.type='button';button.className='queue-item';button.setAttribute('role','listitem');
+ const info=document.createElement('div'),title=document.createElement('strong'),meta=document.createElement('span'),pill=document.createElement('span');
+ title.textContent=item.title||'Başlıksız bildirim';
+ const fields=[item.date?('Tarih: '+item.date.slice(0,10)):'',typeof item.hours==='number'?('Saat: '+item.hours):''].filter(Boolean);
+ meta.textContent=fields.join(' · ')||'Tarih ve süre belirtilmemiş';
+ pill.className='queue-pill';pill.textContent=item.status||'İncelenecek';
+ info.append(title,meta);button.append(info,pill);
+ button.addEventListener('click',()=>{$('source').value=item.url;check();});
+ $('queueList').append(button);
+}
+async function loadQueue(reset=true){
+ if(queueLoading||!access)return;
+ queueLoading=true;const epoch=queueEpoch;
+ $('refreshQueue').disabled=true;$('moreQueue').disabled=true;
+ if(reset){queueCursor=null;queueLoaded=0;$('queueList').replaceChildren();$('queueCount').textContent='Bekleyen bildirimler';}
+ $('queueState').textContent='Bildirimler güvenli sunucudan kontrol ediliyor...';
+ try{
+   const data=await queueRequest(reset?'':queueCursor||'');
+   if(epoch!==queueEpoch||!access)return;
+   if(data.code!=='QUEUE_READ_OK'||!Array.isArray(data.items))throw Error('Beklenmeyen liste yanıtı.');
+   for(const item of data.items){appendQueueItem(item);queueLoaded++;}
+   queueCursor=data.has_more?data.next_cursor:null;
+   $('moreQueue').classList.toggle('hidden',!queueCursor);
+   $('queueCount').textContent='Gösterilen bildirim: '+queueLoaded;
+   $('queueState').textContent=queueLoaded===0?'İncelenecek bildirim bulunmuyor. Yeni bildirim geldiğinde bu alanda görünecek.':'Bir bildirime tıklayarak inceleme ekranını açabilirsiniz.';
+ }catch(e){
+   if(epoch!==queueEpoch||!access)return;
+   $('moreQueue').classList.add('hidden');
+   $('queueState').textContent='Liste görüntülenemedi: '+e.message+'. Giriş başarılı olsa bile yönetici yetkisi ve ajans kurulumu ayrıca gereklidir.';
+ }finally{
+   if(epoch===queueEpoch){queueLoading=false;$('refreshQueue').disabled=false;$('moreQueue').disabled=false;}
+ }
+}
+$('refreshQueue').addEventListener('click',()=>loadQueue(true));
+$('moreQueue').addEventListener('click',()=>{if(queueCursor)loadQueue(false);});
+
 function idFromText(s){
  const match=s.trim().match(/[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}|[a-f0-9]{32}/i);
  if(!match)return null;const h=match[0].replaceAll('-','').toLowerCase();return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);
@@ -119,11 +190,11 @@ async function check(){
 }
 $('loginForm').addEventListener('submit',async e=>{
  e.preventDefault();$('signIn').disabled=true;msg('Giriş doğrulanıyor...');
- try{const data=await auth('/token?grant_type=password',{email:$('email').value.trim(),password:$('password').value});access=data.access_token;refresh=data.refresh_token;$('password').value='';show('userEmail',$('email').value.trim());$('login').classList.add('hidden');$('workspace').classList.remove('hidden');msg('Giriş doğrulandı. Notion bildirim bağlantısını seçebilirsiniz.');}
+ try{const data=await auth('/token?grant_type=password',{email:$('email').value.trim(),password:$('password').value});access=data.access_token;refresh=data.refresh_token;$('password').value='';show('userEmail',$('email').value.trim());$('login').classList.add('hidden');$('workspace').classList.remove('hidden');msg('Giriş doğrulandı. Bekleyen bildirimler kontrol ediliyor.');queueEpoch++;loadQueue(true);}
  catch(e){$('password').value='';msg('Giriş başarısız: '+e.message);}
  finally{$('signIn').disabled=false;}
 });
-$('logout').addEventListener('click',()=>{const old=access;access='';refresh='';record=null;source='';$('workspace').classList.add('hidden');$('login').classList.remove('hidden');$('result').classList.add('hidden');buttons();msg('Oturum kapatıldı.');if(old)auth('/logout',{},old).catch(()=>{});});
+$('logout').addEventListener('click',()=>{queueEpoch++;queueLoading=false;queueCursor=null;queueLoaded=0;$('queueList').replaceChildren();$('queueState').textContent='Liste henüz yüklenmedi.';$('moreQueue').classList.add('hidden');const old=access;access='';refresh='';record=null;source='';$('workspace').classList.add('hidden');$('login').classList.remove('hidden');$('result').classList.add('hidden');buttons();msg('Oturum kapatıldı.');if(old)auth('/logout',{},old).catch(()=>{});});
 $('lookupForm').addEventListener('submit',e=>{e.preventDefault();check();});
 async function decide(action){
  if(busy||!record)return;const reason=$('reason').value.trim();if(!reason){msg('Karar gerekçesi yazın.');return;}
