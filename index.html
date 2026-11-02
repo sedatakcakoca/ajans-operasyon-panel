@@ -464,8 +464,8 @@ async function check(){
  const id=idFromText($('source').value);if(!id){msg('Geçerli bildirim bağlantısı veya UUID yazın.');return;}
  source=id;record=null;finalPreview=null;$('finalPanel').classList.add('hidden');busy=true;buttons();msg('Sunucu kaynakları ve yönetici yetkisini denetliyor...');
  try{record=await call('GET');$('result').classList.remove('hidden');show('sourceId',source);show('code',record.code);show('approval',record.approval?.state||'Onay bulunamadı');show('blockers',(record.blockers||[]).map(x=>ERROR_TEXT[x]||x).join(' • ')||'Engel bildirilmedi');msg('Kontrol tamamlandı. Son kararı sunucu verir.');}
- catch(e){$('result').classList.add('hidden');msg('Kontrol sonucu: '+e.message);}
- finally{busy=false;buttons();await finalCheck();}
+ catch(e){record=null;$('result').classList.remove('hidden');show('sourceId',source);show('code',e.message);show('approval','Kontrol tamamlanamadı');show('blockers','Sunucu ön kontrolü başarısız: '+e.message);msg('Kontrol sonucu: '+e.message);}
+ finally{busy=false;buttons();await finalCheck();if(!$('result').classList.contains('hidden'))$('result').scrollIntoView({behavior:'smooth',block:'center'});}
 }
 $('loginForm').addEventListener('submit',async e=>{
  e.preventDefault();$('signIn').disabled=true;msg('Giriş doğrulanıyor...');
