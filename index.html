@@ -150,6 +150,16 @@ async function call(method,action='',body=null,retry=true){
 
 
 const FINAL_TEXT={
+ FINAL_APPROVAL_SNAPSHOT_CHANGED:'Onaylanan içerik değişmiş. Eski karar bu kayıt için geçerli değil; yeniden değerlendirme gerekiyor.',
+ FINAL_APPROVAL_CONTENT_PROOF_CHANGED:'Zaman kaydı ile onay kanıtı uyuşmuyor. Bu kaydı kesinleşmiş maliyet olarak kullanmayın.',
+ FINAL_APPROVAL_FIELDS_CHANGED:'Nihai onay bilgileri değişmiş; önceki onay geçerli gösterilemiyor.',
+ FINAL_APPROVAL_AUTHORIZATION_CHANGED:'Oturum, yetki veya kurulum değişti. İşlem durduruldu.',
+ FINAL_PERSISTENT_GUARD_REQUIRED:'Kalıcı maliyet ve kota kontrolü doğrulanamadı. Nihai onay kapalı.',
+ FINAL_APPROVAL_NOTE_ACCESS_REQUIRED:'Nihai onay bağlantısı, korunan Zaman Onay Notu ve içerik kontrol alanına erişemiyor. Kurulum sorumlusu alan izinlerini tamamlamalı.',
+ FINAL_GUARD_SCHEMA_UNAVAILABLE:'Nihai onay için kaynak yapılandırması okunamadı.',
+ FINAL_COST_ARITHMETIC_MISMATCH:'Saat, maliyet ve kur hesabı uyuşmuyor. Kaydı düzeltin.',
+ FINAL_RECONCILIATION_ACTOR_CONTEXT_CHANGED:'Belirsiz kararın oturum bağlamı değişmiş. Otomatik tekrar yazılmadı; yetkili inceleme gerekiyor.',
+ FINAL_SNAPSHOT_LEGACY_EVENT_REQUIRES_REVIEW:'Eski onay kanıtı yeni içerik doğrulamasını içermiyor. Otomatik onaylanmadı.',
  LINKED_TRANSFER_REQUIRED:'Bu bildirim henüz gerçek Zaman Kayıtları kaydına aktarılmamış.',
  INSTALLATION_TIME_GATE_CLOSED:'Zaman aktarım kurulum kapısı kapalı.',
  NOTION_FINAL_TOKEN_MISSING:'Nihai onay Notion bağlantısı eksik.',
@@ -367,7 +377,7 @@ async function connectionCheck(retry=true){
   const labor=(laborSuccess||laborKnown||laborChecks.find(x=>x[1])||[])[1];
   const laborSource=(laborSuccess||laborKnown||laborChecks.find(x=>x[1])||[])[0];
   const quota=(quotaChecks.find(x=>x[1]==='QUOTA_APPROVAL_GUARD_PRESENT')||quotaChecks.find(x=>x[1])||[])[1];
-  const translate=v=>v==='LABOR_APPROVAL_GUARD_PRESENT'?'yalnız yetkili onay bilgileriyle maliyet hesaplanıyor':v==='LABOR_APPROVAL_GUARD_UNCONFIRMED'?'nihai işçilik onayı formülü doğrulanamadı':v==='QUOTA_APPROVAL_GUARD_PRESENT'?'yalnız nihai onaylı saatler sayılıyor':v==='QUOTA_APPROVAL_GUARD_UNCONFIRMED'?'onaylı saat formülü beklenen ifadeyle eşleşmedi':v==='FORMULA_PROPERTY_NOT_VISIBLE'?'formül alanı bu bağlantıya görünmüyor':v==='FORMULA_EXPRESSION_NOT_VISIBLE'?'formül ifadesi okunamıyor':v==='FORMULA_PROPERTY_TYPE_UNEXPECTED'?'beklenen formül alanı bulunamadı':'doğrulanamadı';
+  const translate=v=>v==='LABOR_APPROVAL_GUARD_PRESENT'?'onay bilgileri ve onaylanan içerik eşleşirse maliyet hesaplanıyor':v==='LABOR_APPROVAL_GUARD_UNCONFIRMED'?'nihai işçilik onayı formülü doğrulanamadı':v==='QUOTA_APPROVAL_GUARD_PRESENT'?'yalnız içeriği değişmemiş, nihai onaylı dönem saatleri sayılıyor':v==='QUOTA_APPROVAL_GUARD_UNCONFIRMED'?'onaylı saat formülü beklenen ifadeyle eşleşmedi':v==='FORMULA_PROPERTY_NOT_VISIBLE'?'formül alanı bu bağlantıya görünmüyor':v==='FORMULA_EXPRESSION_NOT_VISIBLE'?'formül ifadesi okunamıyor':v==='FORMULA_PROPERTY_TYPE_UNEXPECTED'?'beklenen formül alanı bulunamadı':'doğrulanamadı';
   const connection=data.connection||{};
   const identity=connection.connection_name?'Notion bağlantısı: '+connection.connection_name+
     (connection.workspace_name?' ('+connection.workspace_name+')':'')+' · ':
@@ -378,7 +388,9 @@ async function connectionCheck(retry=true){
      ' · Bildirim listesini okuma: '+queueStatus+
      ' · Zaman kaydı tokenı: '+detail(fin)+
      ' · Bildirim güncelleme tokenı: '+detail(fields.source_writer_token)+
-     ' · Nihai onay tokenı: '+detail(fields.target_final_update_token)+
+     ' · Nihai onay bağlantısı: '+detail(fields.target_final_update_token)+
+     ' · İçerik kontrolü: '+(fields.target_final_update_token?.final_content_guard?'doğrulandı':'bu bağlantıda doğrulanamadı')+
+     ' · Korunan onay notu: '+(fields.target_final_update_token?.final_note_visible?'okunabiliyor; güncelleme yetkisi ilk gerçek işlemde doğrulanır':'erişim eksik')+
      ' · İşçilik formülü (erişebilen bağlantı): '+translate(labor)+(laborSource?' ('+laborSource+')':'')+
      ' · Genel okuma bağlantısının işçilik erişimi: '+translate(fields.target_reader?.cost_contribution_guard)+
      ' · İlk aktarımda kota: '+translate(quota)+
