@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>ZB-13 | Kontrollü Aktarım Kurtarma</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#172b47;background:#f4f7fb}
+    *{box-sizing:border-box}body{margin:0}.wrap{max-width:780px;margin:35px auto;padding:0 18px}
+    h1{font-size:30px;line-height:1.2}h2{font-size:19px}p{color:#516682;line-height:1.6}
+    .panel{background:#fff;border:1px solid #dde5ee;border-radius:16px;padding:24px;margin:19px 0;box-shadow:0 6px 30px #132b4a08}
+    label{display:block;font-size:14px;font-weight:660;margin:12px 0}input{font:inherit;width:100%;padding:11px;border:1px solid #c5d0e0;border-radius:8px;margin-top:6px}
+    button{font:inherit;font-weight:650;background:#254874;border:0;border-radius:9px;color:white;padding:12px 15px;cursor:pointer;margin:5px 7px 5px 0}
+    button.secondary{background:#e7eef8;color:#25466c}button:disabled{opacity:.45;cursor:not-allowed}
+    .hidden{display:none}.status{white-space:pre-wrap;border-radius:10px;background:#f0f4fa;padding:15px;color:#304c70;overflow-wrap:anywhere}
+    .warning{background:#fff9ea;border-left:4px solid #b38331;padding:16px;border-radius:8px;color:#5b471c}
+    .warning p{margin-bottom:0;color:#6b5529}small{color:#657892}a{color:#285f9e}
+  </style>
+</head>
+<body><main class="wrap">
+  <a href="https://sedatakcakoca.github.io/ajans-operasyon-panel/">Ana yönetici paneline dön</a>
+  <h1>ZB-13 — Kontrollü aktarım kurtarma</h1>
+  <p>Bu ekran yalnızca önceki gerçek aktarım girişimi belirsiz kalan ZB-13 bildirimi içindir. Normal aktarım ve nihai işçilik onayı burada yapılmaz.</p>
+  <section id="login" class="panel">
+    <h2>Yönetici girişi</h2>
+    <form id="loginForm">
+      <label>E-posta<input id="email" type="email" autocomplete="username" required></label>
+      <label>Parola<input id="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit" id="signIn">Giriş yap ve durumu doğrula</button>
+    </form>
+    <small>Bilgiler doğrudan kendi Supabase Auth projenize gönderilir. Bu sayfa parola veya oturumu kalıcı olarak saklamaz.</small>
+  </section>
+  <section id="work" class="panel hidden">
+    <h2>Kurtarma durumu</h2>
+    <p>Bildirim: <code>ZB-13</code></p>
+    <div id="status" class="status" role="status" aria-live="polite">Kontrol yapılmadı.</div>
+    <p><button class="secondary" id="refresh" type="button">Durumu kontrol et</button><button class="secondary" id="logout" type="button">Çıkış yap</button></p>
+    <div class="warning"><strong>Tek seferlik kurtarma</strong><p>Sunucu canlı ajans sahibi oturumunu, geçerli yönetici onayını ve bekleme süresini denetler. Hedef kayıt üç ayrı Notion bağlantısıyla iki tur aranır. Kayıt varsa veya yokluğu kesinleşmiyorsa yazma engellenir. Tek kurtarma denemesi sonrasında ikinci yazma yapılmaz.</p></div>
+    <p><button id="recover" type="button" disabled>Kontrollü kurtarmayı başlat — tek deneme</button></p>
+    <div id="feedback" class="status" role="status" aria-live="polite">Henüz işlem yapılmadı.</div>
+  </section>
+</main>
+<script>
+'use strict';
+const SERVER='https://iorolypwvcckcfwhqnmw.supabase.co';
+const BRIDGE=SERVER+'/functions/v1/agency-time-manager';
+const SOURCE='40c81cb9-c12a-81fc-b539-ca658ca78d6b';
+const $=s=>document.getElementById(s);
+let config=null,access='',record=null,busy=false;
+function notice(s){$('feedback').textContent=s;}
+function update(){
+ const r=record?.recovery;
+ $('recover').disabled=busy||r?.status!=='reconcile_required'||r?.eligible!==true||record?.approval?.approval_valid_as_of_read!==true;
+ $('refresh').disabled=busy;$('signIn').disabled=busy;
+}
+async function configuration(){
+ if(config)return config;
+ const r=await fetch(BRIDGE+'/config',{cache:'no-store'});
+ if(!r.ok)throw Error('Bağlantı ayarları alınamadı.');
+ const j=await r.json();
+ if(j.supabaseUrl!==SERVER||typeof j.publishableKey!=='string')throw Error('Bağlantı ayarları geçersiz.');
+ config=j;return j;
+}
+async function review(){
+ if(!access)throw Error('Giriş gerekli.');
+ busy=true;update();$('status').textContent='Canlı kayıt denetleniyor...';
+ try{
+  const response=await fetch(BRIDGE+'/api?source_id='+encodeURIComponent(SOURCE),{headers:{authorization:'Bearer '+access},cache:'no-store'});
+  const data=await response.json().catch(()=>({code:'YANIT_OKUNAMADI'}));
+  if(!response.ok)throw Error(data.code||'Kontrol başarısız.');
+  record=data;
+  const r=data.recovery||{};
+  $('status').textContent='Kaynak: '+(data.code||'—')+
+    '\nOnay: '+(data.approval?.state||'—')+
+    '\nAktarım durumu: '+(r.status||'—')+
+    '\nTek kurtarma hakkı: '+(r.one_shot_used?'Kullanılmış':'Kullanılmamış')+
+    '\nKurtarma uygunluğu: '+(r.eligible?'UYGUN':'Uygun değil');
+ }catch(err){record=null;$('status').textContent='Sunucu kontrolü başarısız: '+err.message;throw err;}
+ finally{busy=false;update();}
+}
+$('loginForm').addEventListener('submit',async e=>{
+ e.preventDefault();busy=true;update();notice('Giriş doğrulanıyor...');
+ try{
+  const c=await configuration();
+  const r=await fetch(SERVER+'/auth/v1/token?grant_type=password',{
+   method:'POST',headers:{apikey:c.publishableKey,'content-type':'application/json'},
+   body:JSON.stringify({email:$('email').value.trim(),password:$('password').value}),cache:'no-store'});
+  $('password').value='';
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||!j.access_token)throw Error(j.msg||j.error_description||'Giriş reddedildi.');
+  access=j.access_token;$('login').classList.add('hidden');$('work').classList.remove('hidden');
+  notice('Yönetici oturumu açıldı. Herhangi bir kayıt yazılmadı.');
+ }catch(err){$('password').value='';notice('Giriş başarısız: '+err.message);}
+ finally{busy=false;update();}
+ if(access)try{await review();}catch(err){notice('Durum kontrolü başarısız: '+err.message);}
+});
+$('refresh').addEventListener('click',async()=>{
+ try{await review();notice('Durum yenilendi. Herhangi bir yazma işlemi yapılmadı.');}
+ catch(err){notice('Kontrol başarısız: '+err.message);}
+});
+$('logout').addEventListener('click',()=>{
+ access='';record=null;$('work').classList.add('hidden');$('login').classList.remove('hidden');update();
+});
+$('recover').addEventListener('click',async()=>{
+ if(busy||record?.recovery?.eligible!==true||record?.approval?.approval_valid_as_of_read!==true)return;
+ const typed=prompt('Tek kurtarma denemesi hakkınız var. Devam etmek için KURTAR yazın:','');
+ if(typed!=='KURTAR'){notice('İşlem iptal edildi.');return;}
+ if(!confirm('Sunucu iki tur bağımsız Notion taraması yapacak ve yalnızca hedefin bulunmadığı doğrulanırsa TEK yazma denemesi yapacak. Onaylıyor musunuz?'))return;
+ busy=true;update();notice('Kurtarma sunucuya gönderildi. Lütfen düğmeye tekrar basmayın.');
+ try{
+  const res=await fetch(BRIDGE+'/api?source_id='+encodeURIComponent(SOURCE)+'&action=recover',{
+   method:'POST',headers:{authorization:'Bearer '+access,'content-type':'application/json','x-recovery-confirmation':SOURCE},body:'{}',cache:'no-store'});
+  const j=await res.json().catch(()=>({code:'YANIT_OKUNAMADI'}));
+  notice((res.ok?'Sunucu yanıtı: ':'Kurtarma durduruldu: ')+(j.code||'Bilinmeyen yanıt')+
+    (j.target_url?'\nHedef: '+j.target_url:'')+'\nİşlemi tekrar başlatmayın.');
+ }catch(err){notice('Sunucu yanıtı belirsiz: '+err.message+'\nİşlemi tekrar başlatmayın.');}
+ finally{busy=false;update();}
+ try{await review();}catch(err){notice($('feedback').textContent+'\nDurum denetimi: '+err.message);}
+});
+configuration().catch(err=>notice('Bağlantı ayarı alınamadı: '+err.message));
+</script>
+</body></html>
